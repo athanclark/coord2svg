@@ -2,8 +2,9 @@ use coord2svg::sources::{Asset, Cache, Product, Region, checksum, etopo_products
 use std::{
     fs,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     thread,
+    time::{Duration, Instant},
 };
 
 fn region(lat: f64, lon: f64, r: f64) -> Region {
@@ -112,11 +113,38 @@ fn cache_checksums_and_corruption() {
             .contains("checksum mismatch")
     );
 }
+// Bound fixture waits so a broken downloader fails rather than hanging CI.
+fn accept(listener: &TcpListener) -> TcpStream {
+    listener.set_nonblocking(true).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                return stream;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "HTTP fixture timed out waiting for the downloader"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("HTTP fixture accept failed: {e}"),
+        }
+    }
+}
 fn server(body: Vec<u8>, code: &'static str) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/tile.tif", listener.local_addr().unwrap());
     let handle = thread::spawn(move || {
-        let (mut socket, _) = listener.accept().unwrap();
+        let mut socket = accept(&listener);
         let mut req = [0; 4096];
         let count = socket.read(&mut req).unwrap();
         assert!(count > 0);
@@ -203,7 +231,7 @@ fn transient_http_errors_retry_then_succeed() {
     let url = format!("http://{}/tile.tif", listener.local_addr().unwrap());
     let handle = thread::spawn(move || {
         for i in 0..3 {
-            let (mut socket, _) = listener.accept().unwrap();
+            let mut socket = accept(&listener);
             let mut request = [0u8; 4096];
             let n = socket.read(&mut request).unwrap();
             assert!(n > 0);

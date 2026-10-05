@@ -220,7 +220,7 @@ cargo clippy --all-targets --locked -- -D warnings
 
 The offline suite covers analytic planes, hills, saddles, depressions, disjoint islands, seabed, flat terrain, missing data, boundary crossings, 1–1,000 km scaling, randomized clipping/height planes, self-touching merge regressions, geodesic round trips, polar/date-line discovery, actual GeoTIFF reprojection across the date line, datum/unit rejection, scale/offset, overlays, cache corruption and HTTP failure budgets, serialized SVG geometry, Boolean unions with overlaps and holes, portable raster checks for interior opacity and elevation-exclusion holes, numeric color mapping, output protection, and CLI validation. Tests use temporary local files and loopback HTTP fixtures; no NOAA connection is required.
 
-The GitHub Actions workflow configures Linux, macOS, and Windows builds/tests and release executable artifacts. It has not been run remotely from this workspace. A synthetic smoke test is available without official data:
+The [GitHub Actions workflow](.github/workflows/ci.yml) runs the full suite on stable Rust on Linux, macOS, and Windows, plus Rust 1.88.0 on Linux. It checks formatting and Clippy, builds release executables, and uploads offline smoke SVG/JSON/GeoTIFF outputs. Native library versions are included in cache keys. See [TESTING.md](TESTING.md) for suite coverage, local commands, and CI details. Remote jobs have not been run from this workspace. A synthetic smoke test is available without official data:
 
 ```sh
 cargo run --release -- --lat 0 --lon 0 --radius 1km --demo --out output/demo.svg
