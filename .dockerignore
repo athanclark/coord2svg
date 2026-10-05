@@ -1,0 +1,8 @@
+*
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!native/
+!native/**
+!src/
+!src/**

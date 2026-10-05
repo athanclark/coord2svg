@@ -1,0 +1,53 @@
+name: Rust and native GIS checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux GDAL
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgdal-dev pkg-config
+      - name: macOS GDAL
+        if: runner.os == 'macOS'
+        run: brew install gdal pkg-config
+      - uses: conda-incubator/setup-miniconda@v4
+        if: runner.os == 'Windows'
+        with:
+          activate-environment: coord2svg
+          python-version: '3.12'
+          channels: conda-forge
+      - name: Windows GDAL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          conda install --yes --channel conda-forge libgdal-core
+          $gisInclude = Join-Path $env:CONDA_PREFIX 'Library/include'
+          if (!(Test-Path (Join-Path $gisInclude 'gdal.h'))) { $gisInclude = Join-Path $gisInclude 'gdal' }
+          "GDAL_INCLUDE_DIR=$gisInclude" | Out-File -Append -FilePath $env:GITHUB_ENV
+          "GDAL_LIB_DIR=$env:CONDA_PREFIX/Library/lib" | Out-File -Append -FilePath $env:GITHUB_ENV
+          "$env:CONDA_PREFIX/Library/bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+          "PROJ_DATA=$env:CONDA_PREFIX/Library/share/proj" | Out-File -Append -FilePath $env:GITHUB_ENV
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - run: cargo run --release --locked -- --lat 0 --lon 0 --radius 1000km --demo --grid-size 17 --out smoke.svg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coord2svg-${{ matrix.os }}
+          path: |
+            target/release/coord2svg
+            target/release/coord2svg.exe
+            smoke.svg
+            smoke.json
+          if-no-files-found: error
