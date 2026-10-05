@@ -4,6 +4,18 @@ use coord2svg::{
     terrain::Grid,
 };
 use std::path::Path;
+
+// Constant-height bilinear resampling can differ by a few floating-point ULPs
+// across GDAL builds/CPUs. This is a roundoff allowance in metres, not a source
+// accuracy tolerance; missing values and tile selection must still fail.
+fn assert_constant_height(actual: f64, expected: f64) {
+    const TOLERANCE_M: f64 = 1e-12;
+    assert!(
+        actual.is_finite() && (actual - expected).abs() <= TOLERANCE_M,
+        "expected {expected} m within {TOLERANCE_M} m, got {actual} m"
+    );
+}
+
 fn region() -> Region {
     Region {
         latitude: 21.,
@@ -106,8 +118,8 @@ fn later_valid_source_overlays_and_nodata_preserves_fallback() {
     values[40] = -9999.;
     write(&b, &reg, 9, &values, 1., 0., "m");
     let (g, _) = raster::sample_files(&reg, 9, &[(a, asset()), (b, asset())]).unwrap();
-    assert_eq!(g.values[40], 10.);
-    assert_eq!(g.values[20], 20.);
+    assert_constant_height(g.values[40], 10.);
+    assert_constant_height(g.values[20], 20.);
 }
 #[test]
 fn unsupported_elevation_units_are_rejected() {
@@ -189,6 +201,22 @@ fn date_line_tiles_have_no_false_gap() {
     };
     let (g, _) = raster::sample_files(&reg, 41, &files).unwrap();
     assert!(g.values.iter().all(|z| z.is_finite()));
-    assert_eq!(g.values[20 * 41 + 10], 10.);
-    assert_eq!(g.values[20 * 41 + 30], 20.);
+    // Check every row on both sides, not just the central row. Keep full-grid
+    // finiteness strict so the tolerance cannot conceal an antimeridian gap.
+    for row in 0..41 {
+        assert_constant_height(g.values[row * 41 + 10], 10.);
+        assert_constant_height(g.values[row * 41 + 30], 20.);
+    }
+}
+
+#[test]
+fn constant_height_check_accepts_roundoff_but_rejects_bad_samples() {
+    assert_constant_height(20.000000000000004, 20.);
+    assert_constant_height(9.999999999999998, 10.);
+    for actual in [f64::NAN, f64::INFINITY, 0., 10., 20.000001] {
+        assert!(
+            std::panic::catch_unwind(|| assert_constant_height(actual, 20.)).is_err(),
+            "invalid sample {actual} was accepted"
+        );
+    }
 }

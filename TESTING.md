@@ -47,6 +47,10 @@ they do not establish real-world source accuracy. Geometry assertions use
 explicit numeric tolerances where resampling or coordinate quantization can
 introduce roundoff. Style metadata uses exact JSON floating-point round trips,
 so equivalent SVG and report elevations can be matched without fuzzy identity.
+Constant-height native bilinear resampling checks allow at most `1e-12` metres
+of roundoff across GDAL builds and CPUs. The date-line test still requires every
+grid value to be finite and checks both tiles' heights on every row; this tiny
+allowance cannot substitute for valid coverage or correct tile selection.
 
 The randomized tests retain regression cases when they find a failure. Keep the
 reported seed/case and add a focused fixture when fixing a new defect. Do not
